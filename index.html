@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RescueNet - Emergency Data Mule System</title>
+    <link rel="stylesheet" href="rescuenet.css">
+</head>
+<body>
+
+    <div class="app-container">
+        <!-- HEADER STATUS BAR -->
+        <header class="top-bar">
+            <div class="status-wrapper">
+                <span id="statusDot" class="status-dot dot-green"></span>
+                <div class="status-text">
+                    <strong id="statusTitle">Online / Node Connected</strong>
+                    <span id="statusSubtitle">Verified Central Office</span>
+                </div>
+            </div>
+            <div class="queue-badge">
+                Queue: <span id="queueCount">0</span>
+            </div>
+        </header>
+
+        <!-- TAB SWITCHER -->
+        <div class="tab-switcher">
+            <button id="tabCitizen" class="tab-btn active" onclick="switchTab('citizen')">Citizen Mode</button>
+            <button id="tabVolunteer" class="tab-btn" onclick="switchTab('volunteer')">Volunteer Listener</button>
+        </div>
+
+        <!-- TAB 1: CITIZEN MODE -->
+        <div id="viewCitizen" class="view-panel">
+            <div class="card-box">
+                <h2>Log Emergency Needs</h2>
+                <form id="sosForm">
+                    <div class="form-group">
+                        <label for="citizenName">Full Name / Contact ID</label>
+                        <input type="text" id="citizenName" required placeholder="e.g. Rahul Sharma">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="citizenLocation">Location / Sector</label>
+                        <input type="text" id="citizenLocation" required placeholder="e.g. House #42, Sector 3">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="peopleCount">Number of Trapped People</label>
+                        <input type="number" id="peopleCount" min="1" value="1" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="neededAid">Required Emergency Aid</label>
+                        <input type="text" id="neededAid" required placeholder="e.g. First Aid kit, Water">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="urgency">Urgency Classification</label>
+                        <select id="urgency">
+                            <option value="Priority 1: Critical Medical">Priority 1: Critical Medical</option>
+                            <option value="Priority 2: Trapped/Structural">Priority 2: Trapped/Structural</option>
+                            <option value="Priority 3: Food & Water" selected>Priority 3: Food & Water</option>
+                        </select>
+                    </div>
+
+                    <button type="submit" class="btn btn-danger">SECURE EMERGENCY REQUEST</button>
+                </form>
+                <div id="citizenAlert" class="alert-msg"></div>
+            </div>
+        </div>
+
+        <!-- TAB 2: VOLUNTEER LISTENER & CENTRAL BASE -->
+        <div id="viewVolunteer" class="view-panel hidden">
+            
+            <!-- PUBLIC AUTHORIZATION FORM -->
+            <div id="volunteerAuthBlock" class="card-box">
+                <h2>Volunteer Authentication</h2>
+                <p class="sub-label">Enter Volunteer Access PIN to decrypt queue</p>
+                <div class="form-group">
+                    <input type="password" id="volunteerPin" maxlength="6" placeholder="Enter 6-digit PIN">
+                </div>
+                <button type="button" class="btn btn-primary" onclick="authenticateVolunteer()">Authorize Node</button>
+                <div id="authAlert" class="alert-msg error"></div>
+            </div>
+
+            <!-- AUTHORIZED VOLUNTEER DASHBOARD -->
+            <div id="volunteerDashboardBlock" class="hidden">
+                <!-- ACTIVE QUEUE -->
+                <div class="card-box">
+                    <div class="box-header">
+                        <h2>Node Queue Requests</h2>
+                        <div class="hdr-btns">
+                            <button class="btn-sm btn-secondary" onclick="fetchVolunteerRequests()">Refresh</button>
+                            <button class="btn-sm btn-info" onclick="offloadToCentral()">Offload to Central</button>
+                        </div>
+                    </div>
+                    <div id="requestContainer" class="card-list"></div>
+                </div>
+
+                <!-- CENTRAL BASE MASTER ARCHIVE -->
+                <div class="card-box" style="margin-top: 15px;">
+                    <div class="box-header">
+                        <h2>Central Base Master Records</h2>
+                        <button class="btn-sm btn-secondary" onclick="fetchCentralRecords()">Refresh Base</button>
+                    </div>
+                    <p class="sub-label">Permanently synchronized central archives</p>
+                    <div id="centralContainer" class="card-list"></div>
+                </div>
+
+                <!-- SECURITY & SETTINGS CARD -->
+                <div class="card-box" style="margin-top: 15px;">
+                    <h2>Security Settings</h2>
+                    
+                    <!-- CHANGE PIN -->
+                    <div class="form-group">
+                        <label for="currentPin">Current PIN</label>
+                        <input type="password" id="currentPin" maxlength="6" placeholder="Enter current PIN">
+                    </div>
+                    <div class="form-group">
+                        <label for="newPin">New PIN</label>
+                        <input type="password" id="newPin" maxlength="6" placeholder="Enter new PIN">
+                    </div>
+                    <button type="button" class="btn btn-secondary" style="width: 100%;" onclick="updateVolunteerPin()">Update Node PIN</button>
+                    <div id="changePinAlert" class="alert-msg"></div>
+
+                    <!-- INLINE PURGE DATABASE -->
+                    <hr style="border: 0; border-top: 1px solid #1e293b; margin: 15px 0;">
+                    
+                    <div id="purgeInitialBlock">
+                        <button type="button" class="btn btn-danger" style="width: 100%;" onclick="showInlinePurgeConfirm()">CLEAR ALL DATABASE DATA</button>
+                    </div>
+
+                    <div id="purgeConfirmBlock" class="hidden" style="background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; padding: 12px; border-radius: 8px;">
+                        <p style="color: #f87171; margin-bottom: 10px; font-size: 13px; font-weight: bold;">Are you sure you want to permanently clear all records?</p>
+                        <div style="display: flex; gap: 10px;">
+                            <button type="button" class="btn btn-danger" style="flex: 1;" onclick="executeDatabasePurge()">Yes, Clear Data</button>
+                            <button type="button" class="btn btn-secondary" style="flex: 1;" onclick="hideInlinePurgeConfirm()">Cancel</button>
+                        </div>
+                    </div>
+                    <div id="purgeAlert" class="alert-msg"></div>
+
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script src="rescuenet.js"></script>
+</body>
+</html>

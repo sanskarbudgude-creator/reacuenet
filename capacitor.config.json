@@ -1,0 +1,9 @@
+{
+  "appId": "com.rescuenet.app",
+  "appName": "RescueNet",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "http",
+    "cleartext": true
+  }
+}
