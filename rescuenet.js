@@ -96,8 +96,45 @@
         return r.node;
     }
 
-    // Backup: tap the status text 5 times quickly to type the server address by hand (e.g. 10.1.2.3)
+    // Backup + checkup: tap the status text 5 times quickly. You can type the server address by hand,
+    // and the app then shows a short report of what works and what fails.
     let taps = 0, tapTimer = null;
+
+    async function timedTest(label, url, opts) {
+        const c = new AbortController();
+        const t = setTimeout(() => c.abort(), 3500);
+        const t0 = Date.now();
+        try {
+            const r = await _fetch(url, Object.assign({ signal: c.signal }, opts || {}));
+            let body = "";
+            if (r.type !== "opaque") { try { body = JSON.stringify(await r.json()); } catch (e) {} }
+            return label + ": OK " + (r.type === "opaque" ? "(reply received)" : r.status + " " + body) + " [" + (Date.now() - t0) + " ms]";
+        } catch (e) {
+            return label + ": FAILED " + (e && e.name) + " - " + (e && e.message) + " [" + (Date.now() - t0) + " ms]";
+        } finally { clearTimeout(t); }
+    }
+
+    async function runCheckup() {
+        const lines = [];
+        lines.push("Page address: " + location.href);
+        lines.push("Browser says online: " + navigator.onLine);
+        const m = /Chrome\/([\d.]+)/.exec(navigator.userAgent || "");
+        lines.push("WebView: " + (m ? m[1] : "unknown"));
+        try {
+            const cap = window.Capacitor;
+            let res = null;
+            if (cap && cap.Plugins && cap.Plugins.NetInfo) res = await cap.Plugins.NetInfo.getAddresses();
+            else if (cap && cap.nativePromise) res = await cap.nativePromise("NetInfo", "getAddresses", {});
+            lines.push("Phone Wi-Fi addresses: " + JSON.stringify(res && res.addresses));
+        } catch (e) { lines.push("Phone address plugin failed: " + (e && e.message)); }
+        lines.push("Server being used: " + (nodeBase || "none found yet"));
+        if (nodeBase) {
+            lines.push(await timedTest("Test 1 (normal)", nodeBase + "/api/ping"));
+            lines.push(await timedTest("Test 2 (no-cors)", nodeBase + "/api/ping", { mode: "no-cors" }));
+        }
+        window.alert(lines.join("\n"));
+    }
+
     document.addEventListener("click", (e) => {
         if (!e.target || e.target.id !== "statusTitle") return;
         taps++;
@@ -105,11 +142,13 @@
         tapTimer = setTimeout(() => { taps = 0; }, 2500);
         if (taps >= 5) {
             taps = 0;
-            const v = window.prompt("Server address (example 10.1.2.3)", nodeBase.replace("http://", "").replace(":" + NODE_PORT, ""));
-            if (v && v.trim()) {
+            const v = window.prompt("Server address (example 10.1.2.3). Leave empty to only run the check.", nodeBase.replace("http://", "").replace(":" + NODE_PORT, ""));
+            if (v === null) return;
+            if (v.trim()) {
                 nodeBase = "http://" + v.trim().replace(/^https?:\/\//, "").replace(/:\d+$/, "") + ":" + NODE_PORT;
                 localStorage.setItem("rescue_node", nodeBase);
             }
+            runCheckup();
         }
     });
 
