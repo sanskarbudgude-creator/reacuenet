@@ -154,10 +154,12 @@
 
     function findNode() {
         if (finding) return finding;
-        if (Date.now() - lastTry < 5000) return Promise.resolve("");
+        if (Date.now() - lastTry < 3000) return Promise.resolve("");
         lastTry = Date.now();
         finding = (async () => {
-            if (nodeBase && await probe(nodeBase)) return nodeBase;
+            // first re-check the last server we used: if it was only restarted, we reconnect within seconds
+            const remembered = nodeBase || localStorage.getItem("rescue_node") || "";
+            if (remembered && await probe(remembered)) { nodeBase = remembered; return nodeBase; }
             const full = Date.now() - lastFull > 30000;   // network scan at most every 30 seconds
             if (full) lastFull = Date.now();
             nodeBase = await scanForNode(full);
