@@ -47,10 +47,33 @@
         return { node: "", alive };
     }
 
+    // the phone's own Wi-Fi network(s), e.g. ["10.164.35"], from the small native plugin in the APK
+    async function localSubnets() {
+        try {
+            const cap = window.Capacitor;
+            let res = null;
+            if (cap && cap.Plugins && cap.Plugins.NetInfo) res = await cap.Plugins.NetInfo.getAddresses();
+            else if (cap && cap.nativePromise) res = await cap.nativePromise("NetInfo", "getAddresses", {});
+            const list = (res && res.addresses) || [];
+            return [...new Set(list.map(a => a.split("/")[0].split(".").slice(0, 3).join(".")))];
+        } catch (e) { return []; }
+    }
+
     async function scanForNode(full) {
         const quick = [...new Set([...KNOWN_NODES, ...PRIORITY])];
         let r = await scanList(quick);
         if (r.node || !full) return r.node;
+
+        // Best case: we know which network we are on, so only that network is checked (fast, light on battery).
+        const locals = await localSubnets();
+        if (locals.length) {
+            const own = [];
+            for (const sub of locals) {
+                for (let h = 1; h < 255; h++) own.push(sub + "." + h);
+            }
+            r = await scanList(own);
+            return r.node;
+        }
 
         // Find which network this phone is on: gateways of every 192.168.x network answer fast on the right one.
         const gateways = [];
@@ -73,13 +96,30 @@
         return r.node;
     }
 
+    // Backup: tap the status text 5 times quickly to type the server address by hand (e.g. 10.1.2.3)
+    let taps = 0, tapTimer = null;
+    document.addEventListener("click", (e) => {
+        if (!e.target || e.target.id !== "statusTitle") return;
+        taps++;
+        clearTimeout(tapTimer);
+        tapTimer = setTimeout(() => { taps = 0; }, 2500);
+        if (taps >= 5) {
+            taps = 0;
+            const v = window.prompt("Server address (example 10.1.2.3)", nodeBase.replace("http://", "").replace(":" + NODE_PORT, ""));
+            if (v && v.trim()) {
+                nodeBase = "http://" + v.trim().replace(/^https?:\/\//, "").replace(/:\d+$/, "") + ":" + NODE_PORT;
+                localStorage.setItem("rescue_node", nodeBase);
+            }
+        }
+    });
+
     function findNode() {
         if (finding) return finding;
         if (Date.now() - lastTry < 5000) return Promise.resolve("");
         lastTry = Date.now();
         finding = (async () => {
             if (nodeBase && await probe(nodeBase)) return nodeBase;
-            const full = Date.now() - lastFull > 60000;   // full scan at most once a minute
+            const full = Date.now() - lastFull > 30000;   // network scan at most every 30 seconds
             if (full) lastFull = Date.now();
             nodeBase = await scanForNode(full);
             if (nodeBase) localStorage.setItem("rescue_node", nodeBase);
