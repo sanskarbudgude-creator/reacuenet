@@ -15,34 +15,62 @@
     let nodeBase = localStorage.getItem("rescue_node") || "";
     let finding = null, lastTry = 0, lastFull = 0;
 
-    async function probe(base) {
+    // "node" = a RescueNet server answered. "alive" = some device answered fast (even with an error).
+    // "dead" = nothing there (request timed out).
+    async function probeKind(base) {
         const c = new AbortController();
         const t = setTimeout(() => c.abort(), 1200);
+        const t0 = Date.now();
         try {
             const r = await _fetch(base + "/api/ping", { signal: c.signal });
-            const d = await r.json();
-            return !!(d && d.status === "active");
-        } catch (e) { return false; }
-        finally { clearTimeout(t); }
+            let d = null;
+            try { d = await r.json(); } catch (e) {}
+            return d && d.status === "active" ? "node" : "alive";
+        } catch (e) {
+            return Date.now() - t0 < 600 ? "alive" : "dead";
+        } finally { clearTimeout(t); }
+    }
+
+    async function probe(base) { return (await probeKind(base)) === "node"; }
+
+    // checks a list of addresses; returns the node found (or "") and which addresses were alive
+    async function scanList(ips) {
+        const alive = [];
+        for (let i = 0; i < ips.length; i += 50) {
+            const batch = ips.slice(i, i + 50);
+            const res = await Promise.all(batch.map(async ip => [ip, await probeKind("http://" + ip + ":" + NODE_PORT)]));
+            for (const [ip, kind] of res) {
+                if (kind === "node") return { node: "http://" + ip + ":" + NODE_PORT, alive };
+                if (kind === "alive") alive.push(ip);
+            }
+        }
+        return { node: "", alive };
     }
 
     async function scanForNode(full) {
-        const set = new Set([...KNOWN_NODES, ...PRIORITY]);
-        if (full) {
-            for (let n = 0; n < 256; n++) set.add("192.168." + n + ".1");
-            for (const sub of COMMON_SUBNETS) {
-                for (let h = 2; h < 255; h++) set.add(sub + "." + h);
-            }
+        const quick = [...new Set([...KNOWN_NODES, ...PRIORITY])];
+        let r = await scanList(quick);
+        if (r.node || !full) return r.node;
+
+        // Find which network this phone is on: gateways of every 192.168.x network answer fast on the right one.
+        const gateways = [];
+        for (let n = 0; n < 256; n++) {
+            const ip = "192.168." + n + ".1";
+            if (!quick.includes(ip)) gateways.push(ip);
         }
-        const ips = [...set];
-        const bases = ips.map(ip => "http://" + ip + ":" + NODE_PORT);
-        for (let i = 0; i < bases.length; i += 50) {
-            const hit = await Promise.any(
-                bases.slice(i, i + 50).map(async b => { if (await probe(b)) return b; throw 0; })
-            ).catch(() => "");
-            if (hit) return hit;
+        r = await scanList(gateways);
+        if (r.node) return r.node;
+
+        const subnets = [...new Set(r.alive.concat(quick).map(ip => ip.split(".").slice(0, 3).join(".")))];
+        let toScan = subnets.length <= 6 ? subnets : [];     // too many "alive" = no real local network
+        if (r.alive.length === 0 || toScan.length === 0) toScan = COMMON_SUBNETS;
+
+        const hosts = [];
+        for (const sub of toScan) {
+            for (let h = 2; h < 255; h++) hosts.push(sub + "." + h);
         }
-        return "";
+        r = await scanList(hosts);
+        return r.node;
     }
 
     function findNode() {
